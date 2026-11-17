@@ -5,10 +5,12 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
-import android.view.View
+import android.view.TextureView
+import android.widget.FrameLayout
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -16,9 +18,41 @@ import kotlin.math.min
 /**
  * Shows a video frame with a draggable, resizable selection frame.
  * The selection is exposed as [crop]: a rectangle in 0..1 coordinates of the displayed frame.
+ *
+ * The picture is either a still [setFrame] bitmap or live video played into [videoView], which
+ * sits exactly under the picture area. The caption and the shape mask are previewed on top.
  */
 class CropView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) :
-    View(context, attrs) {
+    FrameLayout(context, attrs) {
+
+    /** Target for fragment playback; kept transparent until something is playing. */
+    val videoView = TextureView(context).apply { alpha = 0f }
+
+    /** Called whenever the selection changes. */
+    var onCropChanged: (() -> Unit)? = null
+
+    var shape = Shape.RECT
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var captionText = ""
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var captionPosition = CaptionPosition.BOTTOM
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    init {
+        setWillNotDraw(false)
+        addView(videoView)
+    }
 
     private val density = resources.displayMetrics.density
     private val inset = 14 * density
@@ -43,6 +77,7 @@ class CropView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             field = value
             if (value) makeSquare()
             invalidate()
+            onCropChanged?.invoke()
         }
 
     /** Selected area, 0..1 relative to the displayed frame (top-left origin). */
@@ -87,6 +122,7 @@ class CropView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         layoutImage()
         if (squareLocked) makeSquare()
         invalidate()
+        onCropChanged?.invoke()
     }
 
     fun setFrame(frame: Bitmap?) {
@@ -99,12 +135,25 @@ class CropView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         toBox()
         if (squareLocked) makeSquare()
         invalidate()
+        onCropChanged?.invoke()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)
         val wanted = ((width - 2 * inset) * frameHeight / frameWidth + 2 * inset).toInt()
         setMeasuredDimension(width, min(wanted, maxHeight))
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        layoutImage()
+        if (image.isEmpty) return
+        val w = image.width().toInt()
+        val h = image.height().toInt()
+        videoView.measure(
+            MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY)
+        )
+        videoView.layout(image.left.toInt(), image.top.toInt(), image.left.toInt() + w, image.top.toInt() + h)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -161,12 +210,35 @@ class CropView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         } else {
             canvas.drawRect(image, dimPaint)
         }
+    }
+
+    /** The overlay goes on top of the video child. */
+    override fun dispatchDraw(canvas: Canvas) {
+        super.dispatchDraw(canvas)
+        if (image.isEmpty) return
 
         // Dim everything outside the selection.
         canvas.drawRect(image.left, image.top, image.right, box.top, dimPaint)
         canvas.drawRect(image.left, box.bottom, image.right, image.bottom, dimPaint)
         canvas.drawRect(image.left, box.top, box.left, box.bottom, dimPaint)
         canvas.drawRect(box.right, box.top, image.right, box.bottom, dimPaint)
+
+        // Parts of the selection the shape cuts away.
+        if (shape != Shape.RECT) {
+            val cut = Path().apply {
+                fillType = Path.FillType.EVEN_ODD
+                addRect(box, Path.Direction.CW)
+                addPath(Overlays.shapePath(shape, box))
+            }
+            canvas.drawPath(cut, dimPaint)
+        }
+
+        if (captionText.isNotBlank()) {
+            canvas.save()
+            canvas.translate(box.left, box.top)
+            Overlays.drawCaption(canvas, box.width(), box.height(), captionText, captionPosition)
+            canvas.restore()
+        }
 
         // Rule-of-thirds grid and border.
         for (i in 1..2) {
@@ -209,6 +281,7 @@ class CropView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 lastY = event.y
                 fromBox()
                 invalidate()
+                onCropChanged?.invoke()
                 return true
             }
 

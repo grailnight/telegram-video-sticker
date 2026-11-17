@@ -21,6 +21,7 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="video/*" />
+                <data android:mimeType="image/gif" />
             </intent-filter>
         </activity>
 
