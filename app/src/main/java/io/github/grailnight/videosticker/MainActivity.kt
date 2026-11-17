@@ -2,18 +2,22 @@ package io.github.grailnight.videosticker
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.VideoView
 import androidx.core.content.FileProvider
@@ -21,14 +25,18 @@ import java.io.File
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.max
 
 class MainActivity : Activity() {
 
+    private lateinit var scroll: ScrollView
     private lateinit var pickButton: Button
     private lateinit var videoInfo: TextView
     private lateinit var startInput: EditText
     private lateinit var durationInput: EditText
     private lateinit var squareCheck: CheckBox
+    private lateinit var cropPanel: View
+    private lateinit var cropView: CropView
     private lateinit var convertButton: Button
     private lateinit var progress: ProgressBar
     private lateinit var status: TextView
@@ -38,6 +46,9 @@ class MainActivity : Activity() {
     private lateinit var shareButton: Button
 
     private val worker = Executors.newSingleThreadExecutor()
+    private val frameLoader = Executors.newSingleThreadExecutor()
+    private var frameRequest = 0
+    private val reloadFrame = Runnable { loadFrame() }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val cancelFlag = AtomicBoolean(false)
 
@@ -50,11 +61,14 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        scroll = findViewById(R.id.scroll)
         pickButton = findViewById(R.id.pickButton)
         videoInfo = findViewById(R.id.videoInfo)
         startInput = findViewById(R.id.startInput)
         durationInput = findViewById(R.id.durationInput)
         squareCheck = findViewById(R.id.squareCheck)
+        cropPanel = findViewById(R.id.cropPanel)
+        cropView = findViewById(R.id.cropView)
         convertButton = findViewById(R.id.convertButton)
         progress = findViewById(R.id.progress)
         status = findViewById(R.id.status)
@@ -65,6 +79,20 @@ class MainActivity : Activity() {
 
         pickButton.setOnClickListener { pickVideo() }
         convertButton.setOnClickListener { if (converting) cancelFlag.set(true) else startConversion() }
+        squareCheck.setOnCheckedChangeListener { _, checked -> cropView.squareLocked = checked }
+        findViewById<Button>(R.id.resetCropButton).setOnClickListener {
+            squareCheck.isChecked = false
+            cropView.resetCrop()
+        }
+        // Show the frame at the chosen start time so the area is picked on the right picture.
+        startInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                mainHandler.removeCallbacks(reloadFrame)
+                mainHandler.postDelayed(reloadFrame, 600)
+            }
+        })
         saveButton.setOnClickListener { saveResult() }
         shareButton.setOnClickListener { shareResult() }
         preview.setOnPreparedListener { it.isLooping = true; it.setVolume(0f, 0f) }
@@ -81,6 +109,8 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         cancelFlag.set(true)
         worker.shutdown()
+        frameLoader.shutdown()
+        mainHandler.removeCallbacks(reloadFrame)
         super.onDestroy()
     }
 
@@ -142,6 +172,41 @@ class MainActivity : Activity() {
         convertButton.isEnabled = true
         status.text = ""
         showResult(null)
+
+        cropView.setFrameSize(width, height)
+        cropPanel.visibility = View.VISIBLE
+        loadFrame()
+    }
+
+    /** Loads the frame at the start time into the crop view (in the background). */
+    private fun loadFrame() {
+        val uri = sourceUri ?: return
+        val request = ++frameRequest
+        var timeUs = (parseSeconds(startInput.text.toString()) * 1_000_000).toLong().coerceAtLeast(0)
+        if (sourceDurationUs > 0) timeUs = timeUs.coerceAtMost(max(0, sourceDurationUs - 100_000))
+        frameLoader.execute {
+            val frame = runCatching {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(applicationContext, uri)
+                    retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)?.let(::downscale)
+                } finally {
+                    runCatching { retriever.release() }
+                }
+            }.getOrNull()
+            mainHandler.post {
+                if (!isDestroyed && request == frameRequest && frame != null) cropView.setFrame(frame)
+            }
+        }
+    }
+
+    private fun downscale(frame: Bitmap): Bitmap {
+        val longSide = max(frame.width, frame.height)
+        if (longSide <= PREVIEW_SIDE) return frame
+        val scale = PREVIEW_SIDE.toFloat() / longSide
+        return Bitmap.createScaledBitmap(
+            frame, max(1, (frame.width * scale).toInt()), max(1, (frame.height * scale).toInt()), true
+        )
     }
 
     private fun displayName(uri: Uri): String {
@@ -165,7 +230,7 @@ class MainActivity : Activity() {
         }
         durationInput.setText(seconds(durationUs))
 
-        val options = StickerTranscoder.Options(startUs, durationUs, squareCheck.isChecked)
+        val options = StickerTranscoder.Options(startUs, durationUs, cropView.crop)
         val output = File(File(cacheDir, "stickers").apply { mkdirs() }, "sticker_${System.currentTimeMillis()}.webm")
         File(cacheDir, "stickers").listFiles()?.forEach { it.delete() }
 
@@ -173,6 +238,7 @@ class MainActivity : Activity() {
         setConverting(true)
         cancelFlag.set(false)
         status.text = getString(R.string.status_converting, 1)
+        scrollToBottom()
 
         val listener = object : StickerTranscoder.Listener {
             override fun onProgress(attempt: Int, fraction: Float) {
@@ -191,6 +257,7 @@ class MainActivity : Activity() {
             mainHandler.post {
                 if (isDestroyed) return@post
                 setConverting(false)
+                scrollToBottom()
                 outcome.onSuccess { result ->
                     val kb = String.format(Locale.US, "%.1f", result.sizeBytes / 1024.0)
                     status.text = if (result.fitsLimit) {
@@ -210,10 +277,17 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Progress, status and the result sit below the fold on most screens. */
+    private fun scrollToBottom() {
+        scroll.post { scroll.smoothScrollTo(0, scroll.getChildAt(0).height) }
+    }
+
     private fun setConverting(active: Boolean) {
         converting = active
         convertButton.text = getString(if (active) R.string.cancel else R.string.convert)
         pickButton.isEnabled = !active
+        cropView.isEnabled = !active
+        squareCheck.isEnabled = !active
         progress.visibility = if (active) View.VISIBLE else View.GONE
         progress.progress = 0
         if (active) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -275,5 +349,6 @@ class MainActivity : Activity() {
     private companion object {
         const val REQUEST_PICK = 1
         const val REQUEST_SAVE = 2
+        const val PREVIEW_SIDE = 1024
     }
 }

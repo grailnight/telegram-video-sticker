@@ -86,8 +86,14 @@ class EncoderInputSurface(private val surface: Surface) {
 /**
  * Receives decoded frames through a [SurfaceTexture] and draws them into the current EGL surface.
  * Must be created while the encoder's EGL context is current.
+ * The crop is given in 0..1 coordinates of the displayed (rotated) frame, top-left origin.
  */
-class DecoderOutputSurface(private val scaleX: Float, private val scaleY: Float) :
+class DecoderOutputSurface(
+    private val cropLeft: Float,
+    private val cropTop: Float,
+    private val cropRight: Float,
+    private val cropBottom: Float
+) :
     SurfaceTexture.OnFrameAvailableListener {
 
     private val callbackThread = HandlerThread("sticker-frames").apply { start() }
@@ -166,7 +172,11 @@ class DecoderOutputSurface(private val scaleX: Float, private val scaleY: Float)
         GLES20.glEnableVertexAttribArray(aTexCoord)
 
         GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(program, "uSTMatrix"), 1, false, stMatrix, 0)
-        GLES20.glUniform2f(GLES20.glGetUniformLocation(program, "uScale"), scaleX, scaleY)
+        // Texture space has its origin at the bottom-left of the displayed frame.
+        GLES20.glUniform4f(
+            GLES20.glGetUniformLocation(program, "uCrop"),
+            cropLeft, 1f - cropBottom, cropRight - cropLeft, cropBottom - cropTop
+        )
         GLES20.glUniform1i(GLES20.glGetUniformLocation(program, "sTexture"), 0)
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
@@ -205,13 +215,14 @@ class DecoderOutputSurface(private val scaleX: Float, private val scaleY: Float)
     private companion object {
         const val VERTEX_SHADER = """
             uniform mat4 uSTMatrix;
-            uniform vec2 uScale;
+            uniform vec4 uCrop;
             attribute vec4 aPosition;
             attribute vec4 aTexCoord;
             varying vec2 vTexCoord;
             void main() {
-                gl_Position = vec4(aPosition.xy * uScale, 0.0, 1.0);
-                vTexCoord = (uSTMatrix * aTexCoord).xy;
+                gl_Position = vec4(aPosition.xy, 0.0, 1.0);
+                vec2 cropped = uCrop.xy + aTexCoord.xy * uCrop.zw;
+                vTexCoord = (uSTMatrix * vec4(cropped, 0.0, 1.0)).xy;
             }
         """
         const val FRAGMENT_SHADER = """

@@ -7,7 +7,9 @@
     <string name="video_info">%1$s\n%2$d×%3$d, %4$s с</string>
     <string name="start_label">Начало, с</string>
     <string name="duration_label">Длина, с (макс. 3)</string>
-    <string name="square_crop">Обрезать до квадрата 512×512</string>
+    <string name="square_crop">Квадрат 1:1</string>
+    <string name="crop_hint">Область стикера: двигайте рамку, тяните за углы и стороны, чтобы изменить размер.</string>
+    <string name="reset_crop">Весь кадр</string>
     <string name="convert">Конвертировать</string>
     <string name="cancel">Отмена</string>
     <string name="save">Сохранить…</string>

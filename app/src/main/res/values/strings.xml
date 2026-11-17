@@ -7,7 +7,9 @@
     <string name="video_info">%1$s\n%2$d×%3$d, %4$s s</string>
     <string name="start_label">Start, s</string>
     <string name="duration_label">Length, s (max 3)</string>
-    <string name="square_crop">Crop to square 512×512</string>
+    <string name="square_crop">Square 1:1</string>
+    <string name="crop_hint">Sticker area: drag the frame to move it, drag its corners or edges to resize.</string>
+    <string name="reset_crop">Whole frame</string>
     <string name="convert">Convert</string>
     <string name="cancel">Cancel</string>
     <string name="save">Save…</string>

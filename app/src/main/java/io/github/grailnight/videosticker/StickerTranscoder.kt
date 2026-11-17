@@ -1,6 +1,7 @@
 package io.github.grailnight.videosticker
 
 import android.content.Context
+import android.graphics.RectF
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaExtractor
@@ -22,7 +23,8 @@ class CancelledException : Exception()
  */
 class StickerTranscoder(private val context: Context) {
 
-    data class Options(val startUs: Long, val durationUs: Long, val squareCrop: Boolean)
+    /** [crop] is the area to keep, in 0..1 coordinates of the displayed frame (top-left origin). */
+    data class Options(val startUs: Long, val durationUs: Long, val crop: RectF)
 
     data class Result(
         val file: File,
@@ -94,15 +96,8 @@ class StickerTranscoder(private val context: Context) {
             val rotated = rotation == 90 || rotation == 270
             val displayWidth = if (rotated) srcHeight else srcWidth
             val displayHeight = if (rotated) srcWidth else srcHeight
-            val size = outputSize(displayWidth, displayHeight, options.squareCrop)
-
-            // Centre-crop for square stickers: stretch the quad past the viewport on the long axis.
-            var scaleX = 1f
-            var scaleY = 1f
-            if (options.squareCrop) {
-                val aspect = displayWidth.toFloat() / displayHeight
-                if (aspect > 1f) scaleX = aspect else scaleY = 1f / aspect
-            }
+            val crop = sanitizeCrop(options.crop)
+            val size = outputSize(crop.width() * displayWidth, crop.height() * displayHeight)
 
             // --- encoder ---
             val encoderFormat = MediaFormat.createVideoFormat(MIME_VP9, size.first, size.second).apply {
@@ -123,7 +118,7 @@ class StickerTranscoder(private val context: Context) {
             encoder.start()
 
             // --- decoder (rotation is applied by the codec when rendering to a Surface) ---
-            outputSurface = DecoderOutputSurface(scaleX, scaleY)
+            outputSurface = DecoderOutputSurface(crop.left, crop.top, crop.right, crop.bottom)
             try {
                 decoder = MediaCodec.createDecoderByType(inputMime)
                 decoder.configure(inputFormat, outputSurface.surface, null, 0)
@@ -269,10 +264,19 @@ class StickerTranscoder(private val context: Context) {
         private const val MAX_ATTEMPTS = 5
         private const val TIMEOUT_US = 10_000L
 
+        /** Clamps the crop to the frame; a degenerate selection falls back to the whole frame. */
+        fun sanitizeCrop(crop: RectF): RectF {
+            val left = crop.left.coerceIn(0f, 1f)
+            val top = crop.top.coerceIn(0f, 1f)
+            val right = crop.right.coerceIn(0f, 1f)
+            val bottom = crop.bottom.coerceIn(0f, 1f)
+            if (right - left < 0.01f || bottom - top < 0.01f) return RectF(0f, 0f, 1f, 1f)
+            return RectF(left, top, right, bottom)
+        }
+
         /** One side is exactly 512, the other is 512 or less (even, for the encoder). */
-        fun outputSize(width: Int, height: Int, square: Boolean): Pair<Int, Int> {
-            if (square || width == height) return STICKER_SIDE to STICKER_SIDE
-            fun shortSide(long: Int, short: Int): Int {
+        fun outputSize(width: Float, height: Float): Pair<Int, Int> {
+            fun shortSide(long: Float, short: Float): Int {
                 val scaled = (STICKER_SIDE.toDouble() * short / long / 2).roundToInt() * 2
                 return min(STICKER_SIDE, max(16, scaled))
             }
