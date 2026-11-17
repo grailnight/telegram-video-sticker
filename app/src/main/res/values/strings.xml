@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Video Sticker</string>
+    <string name="intro">Converts a video into a Telegram video sticker: WebM (VP9), 512 px, up to 3 s, up to 30 fps, no audio, up to 256 KB.</string>
+    <string name="pick_video">Choose video</string>
+    <string name="no_video">No video selected</string>
+    <string name="video_info">%1$s\n%2$d×%3$d, %4$s s</string>
+    <string name="start_label">Start, s</string>
+    <string name="duration_label">Length, s (max 3)</string>
+    <string name="square_crop">Crop to square 512×512</string>
+    <string name="convert">Convert</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save…</string>
+    <string name="share">Share</string>
+    <string name="status_converting">Converting… attempt %1$d</string>
+    <string name="status_done">Done: %1$d×%2$d, %3$s s, %4$s KB</string>
+    <string name="status_too_big">Could not fit into 256 KB (got %1$s KB). Try a shorter clip.</string>
+    <string name="status_cancelled">Cancelled</string>
+    <string name="status_saved">Saved</string>
+    <string name="error_generic">Error: %1$s</string>
+    <string name="error_open">Cannot open this video</string>
+    <string name="error_start">Start is beyond the end of the video</string>
+    <string name="error_no_vp9">This device has no VP9 video encoder</string>
+    <string name="error_no_frames">No frames in the selected range</string>
+    <string name="error_no_track">The file has no video track</string>
+    <string name="hint">To add the sticker: send the .webm file to the @Stickers bot in Telegram.</string>
+</resources>

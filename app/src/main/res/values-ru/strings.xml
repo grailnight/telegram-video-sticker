@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Видеостикер</string>
+    <string name="intro">Конвертирует видео в видеостикер Telegram: WebM (VP9), 512 px, до 3 с, до 30 кадров/с, без звука, до 256 КБ.</string>
+    <string name="pick_video">Выбрать видео</string>
+    <string name="no_video">Видео не выбрано</string>
+    <string name="video_info">%1$s\n%2$d×%3$d, %4$s с</string>
+    <string name="start_label">Начало, с</string>
+    <string name="duration_label">Длина, с (макс. 3)</string>
+    <string name="square_crop">Обрезать до квадрата 512×512</string>
+    <string name="convert">Конвертировать</string>
+    <string name="cancel">Отмена</string>
+    <string name="save">Сохранить…</string>
+    <string name="share">Поделиться</string>
+    <string name="status_converting">Конвертация… попытка %1$d</string>
+    <string name="status_done">Готово: %1$d×%2$d, %3$s с, %4$s КБ</string>
+    <string name="status_too_big">Не удалось уложиться в 256 КБ (вышло %1$s КБ). Попробуйте фрагмент короче.</string>
+    <string name="status_cancelled">Отменено</string>
+    <string name="status_saved">Сохранено</string>
+    <string name="error_generic">Ошибка: %1$s</string>
+    <string name="error_open">Не удалось открыть это видео</string>
+    <string name="error_start">Начало находится за концом видео</string>
+    <string name="error_no_vp9">На этом устройстве нет кодировщика VP9</string>
+    <string name="error_no_frames">В выбранном фрагменте нет кадров</string>
+    <string name="error_no_track">В файле нет видеодорожки</string>
+    <string name="hint">Чтобы добавить стикер, отправьте файл .webm боту @Stickers в Telegram.</string>
+</resources>
